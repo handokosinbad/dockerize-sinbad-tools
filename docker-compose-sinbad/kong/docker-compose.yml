@@ -1,0 +1,77 @@
+##########################################################
+# THIS DOCKER COMPOSE ALL BE NEEDED ON LOCAL ENVIRONMENT #
+#     CHOOSE ONE OF KAFKA MICROSERVICE / KAFKA MEDEA     #
+#                AND COMMENT ONE OF IT                   #
+##########################################################
+
+version: '3.8'
+
+networks:
+  sinbad-net:
+    driver: bridge
+    name: sinbad-net
+
+services:
+
+  #########################
+  # API GATEWAY FOR MEDEA #
+  #########################
+  kong-migrates:
+    image: 'kong:1.3.0-alpine'
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=host.docker.internal
+      - KONG_PG_DB=${POSTGRESQL_DB_KONG}
+      - KONG_PG_USER=postgres
+      - KONG_PG_PASSWORD=
+    command: kong migrations bootstrap
+    # command: kong migrations reset -y
+    restart: on-failure
+    networks:
+      - sinbad-net
+
+  kong:
+    image: 'kong:1.3.0-alpine'
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_USER=postgres
+      - KONG_PG_PASSWORD=
+      - KONG_PG_DB=${POSTGRESQL_DB_KONG}
+      - KONG_PG_HOST=host.docker.internal
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+    ports:
+      - "8000:8000/tcp"
+      - "127.0.0.1:8001:8001/tcp"
+      - "8443:8443/tcp"
+      - "127.0.0.1:8444:8444/tcp"
+    networks:
+      - sinbad-net
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: on-failure
+
+  konga:
+    image: pantsel/konga:0.14.1
+    depends_on:
+      - kong
+    ports:
+      - '1337:1337'
+    environment:
+      - DB_HOST=host.docker.internal
+      - DB_USER=postgres
+      - DB_PASSWORD=
+      - DB_DATABASE=${POSTGRESQL_DB_KONG}
+      - DB_PORT=5432
+      - DB_ADAPTER=postgres
+    networks:
+      - sinbad-net
+  #############################
+  # END API GATEWAY FOR MEDEA #
+  #############################

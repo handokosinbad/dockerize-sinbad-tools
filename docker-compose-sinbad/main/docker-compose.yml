@@ -1,0 +1,45 @@
+##########################################################
+# THIS DOCKER COMPOSE ALL BE NEEDED ON LOCAL ENVIRONMENT #
+#     CHOOSE ONE OF KAFKA MICROSERVICE / KAFKA MEDEA     #
+#                AND COMMENT ONE OF IT                   #
+##########################################################
+
+version: '3.8'
+
+networks:
+  sinbad-net:
+    driver: bridge
+    name: sinbad-net
+
+services:
+  #########################
+  # GLOBAL STORAGE SINBAD #
+  #########################
+  postgresql:
+    image: 'bitnami/postgresql:11'
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRESQL_DATABASE=${POSTGRE_DB_NAME}
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      - sinbad-net
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - sinbad-net
+  
+  mongo:
+    image: mongo:4.2.10-bionic
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_DATABASE: sinbad
+    networks:
+      - sinbad-net
+  #############################
+  # END GLOBAL STORAGE SINBAD #
+  #############################

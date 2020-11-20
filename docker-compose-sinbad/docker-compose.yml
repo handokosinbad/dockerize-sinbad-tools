@@ -1,0 +1,214 @@
+##########################################################
+# THIS DOCKER COMPOSE ALL BE NEEDED ON LOCAL ENVIRONMENT #
+#     CHOOSE ONE OF KAFKA MICROSERVICE / KAFKA MEDEA     #
+#                AND COMMENT ONE OF IT                   #
+##########################################################
+
+version: '3.8'
+
+networks:
+  sinbad-net:
+    driver: bridge
+    name: sinbad-net
+
+services:
+  #########################
+  # GLOBAL STORAGE SINBAD #
+  #########################
+  postgresql:
+    image: 'bitnami/postgresql:11'
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRESQL_DATABASE=${POSTGRE_DB_NAME}
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      - sinbad-net
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - sinbad-net
+  
+  mongo:
+    image: mongo:4.2.10-bionic
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_DATABASE: sinbad
+    networks:
+      - sinbad-net
+  #############################
+  # END GLOBAL STORAGE SINBAD #
+  #############################
+
+
+  #########################
+  # API GATEWAY FOR MEDEA #
+  #########################
+  kong-migrates:
+    image: 'kong:1.3.0-alpine'
+    depends_on:
+      - postgresql
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=postgresql
+      - KONG_PG_DB=${POSTGRESQL_DB_KONG}
+      - KONG_PG_USER=postgres
+      - KONG_PG_PASSWORD=
+    command: kong migrations bootstrap
+    # command: kong migrations reset -y
+    restart: on-failure
+    networks:
+      - sinbad-net
+
+  kong:
+    image: 'kong:1.3.0-alpine'
+    depends_on:
+      - postgresql
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_USER=postgres
+      - KONG_PG_PASSWORD=
+      - KONG_PG_DB=${POSTGRESQL_DB_KONG}
+      - KONG_PG_HOST=postgresql
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+    ports:
+      - "8000:8000/tcp"
+      - "127.0.0.1:8001:8001/tcp"
+      - "8443:8443/tcp"
+      - "127.0.0.1:8444:8444/tcp"
+    networks:
+      - sinbad-net
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: on-failure
+
+  konga:
+    image: pantsel/konga:0.14.1
+    depends_on:
+      - kong
+    ports:
+      - '1337:1337'
+    environment:
+      - DB_HOST=postgresql
+      - DB_USER=postgres
+      - DB_PASSWORD=
+      - DB_DATABASE=${POSTGRESQL_DB_KONG}
+      - DB_PORT=5432
+      - DB_ADAPTER=postgres
+    networks:
+      - sinbad-net
+  #############################
+  # END API GATEWAY FOR MEDEA #
+  #############################
+
+
+  ###################
+  # KAFKA FOR MEDEA #
+  ###################
+  zookeeper-medea:
+    image: "bitnami/zookeeper:3"
+    ports:
+      - "22181:22181"
+      - "22888:22888"
+      - "23888:23888"
+    environment:
+      ZOO_SERVER_ID: 1
+      ZOO_TICK_TIME: 2000
+      ZOO_PORT_NUMBER: 22181
+      ZOO_SERVERS: 0.0.0.0:22888:23888
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    volumes:
+      - "zookeeper_data:/bitnami"
+    networks:
+      - sinbad-net
+
+  kafka-medea:
+    image: "bitnami/kafka:2"
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:22181
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
+      # KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://10.0.20.30:9092,EXTERNAL://10.0.20.30:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - "kafka_data:/bitnami"
+    restart: on-failure  
+    depends_on:
+      - zookeeper-medea
+    networks:
+      - sinbad-net
+  
+  kafka-ui-medea:
+    image: sheepkiller/kafka-manager
+    depends_on:
+      - zookeeper-medea
+    environment:
+      ZK_HOSTS: zookeeper:22181
+    ports:
+      - "9000:9000"
+    networks:
+      - sinbad-net
+  #######################
+  # END KAFKA FOR MEDEA #
+  #######################
+
+
+  ############################
+  # KAFKA FOR MICROSERCVICES #
+  ############################
+  zookeeper-ms:
+    image: zookeeper:3.4.9
+    restart: unless-stopped
+    hostname: zoo1
+    ports:
+      - "2181:2181"
+    environment:
+        ZOO_MY_ID: 1
+        ZOO_PORT: 2181
+        ZOO_SERVERS: server.1=zoo1:2888:3888
+    volumes:
+      - ./full-stack/zoo1/data:/data
+      - ./full-stack/zoo1/datalog:/datalog
+
+  kafka-ms:
+    image: confluentinc/cp-kafka:5.2.1
+    hostname: kafka1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: LISTENER_DOCKER_INTERNAL://kafka1:19092,LISTENER_DOCKER_EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: LISTENER_DOCKER_INTERNAL:PLAINTEXT,LISTENER_DOCKER_EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: LISTENER_DOCKER_INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - ./full-stack/kafka1/data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper-ms
+  ################################
+  # END KAFKA FOR MICROSERCVICES #
+  ################################
+
+volumes:
+  zookeeper_data:
+    driver: local
+  kafka_data:
+    driver: local
