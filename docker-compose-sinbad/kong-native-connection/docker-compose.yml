@@ -54,7 +54,6 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
-    restart: on-failure
 
   konga:
     image: pantsel/konga:0.14.1
