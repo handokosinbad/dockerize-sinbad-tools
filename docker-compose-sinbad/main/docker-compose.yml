@@ -20,7 +20,7 @@ services:
     ports:
       - '5432:5432'
     environment:
-      - POSTGRESQL_DATABASE=${POSTGRE_DB_NAME}
+      - POSTGRESQL_DATABASE=postgres
       - ALLOW_EMPTY_PASSWORD=yes
     networks:
       - sinbad-net
